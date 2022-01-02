@@ -41,6 +41,10 @@ io.on('connection', (socket) => {
 
 		// from here on, the game logic is in the class, not the socket.io connection
 		games[room].start();
+
+		setTimeout(() => {
+			socket.emit('rotateField');
+		}, 100);
 	}
 
 	socket.onAny((event, data) => {
