@@ -12,6 +12,8 @@ const io = new Server(server, {
   }
 });
 
+// const __dirname = 'www';
+
 app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
 });
@@ -31,24 +33,26 @@ io.on('connection', (socket) => {
 		let users = io.sockets.adapter.rooms.get(room);
 
 		//convert stupid map to goody array
-		const players = [[...users][0], [...users][1]];
+		const socketIds = [[...users][0], [...users][1]];
+
+		let players = [
+			io.sockets.sockets.get(socketIds[0]),
+			io.sockets.sockets.get(socketIds[1])
+		];
 
 		// make game in this room and add players
-		let game = new Game(room, players, io);
+		let game = new Game(io, room, players);
 
 		// make this game globally available by room-number so we can access it later
 		games[room] = game;
-
-		// from here on, the game logic is in the class, not the socket.io connection
-		games[room].start();
-
-		setTimeout(() => {
-			socket.emit('rotateField');
-		}, 100);
 	}
 
 	socket.onAny((event, data) => {
+		// games[room].currentCaller = socket;
+		
 		games[room][event](socket, data);
+
+		// games[room].currentOpponent = socket;
 	});
 
 	socket.on('disconnect', socket => {
@@ -56,6 +60,6 @@ io.on('connection', (socket) => {
 	});
 });
 
-server.listen(3000, () => {
-  	console.log('listening on *:3000');
+server.listen(5000, () => {
+  	console.log('listening on *:5000');
 });
