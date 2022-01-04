@@ -1,134 +1,239 @@
 'use strict';
 
-module.exports = class Game {
-    MoveNumber = 0;
-    playerFirstMove = false;
-    playerToMove = null;
-    currentOpponent = null;
-    columns = 8;
+module.exports = class Game1 {
 	rows = 8;
+	columns = 8;
 
+	playerToMove = null;
+
+	//first move decision
+	storedFigureForFirstMove = false;
+
+	//All these variables are only used for the pat situation (pretty complex, maybe find a tinier solution)
 	patSituation = false;
 	patChoosed = 0;
 	currentFrom;
 	currentTo;
-	currentCaller;
-	settedFiguresCounter = 0;
 
-	constructor(room, players, io) {
-        this.room = room;
-        this.players = players;
-        this.io = io;
 
-		this.gameField = new Array(this.columns);
+	//figures
+	figuresConstruct = {
+		rock: {
+			number: 5,
+			attacker: true,
+		},
+		paper: {
+			number: 5,
+			attacker: true,
+		},
+		scissor: {
+			number: 5,
+			attacker: true,
+		},
+		king: {
+			number: 1,
+			attacker: false
+		}
+	}
 
-		for (let rows = 0; rows < this.gameField.length; rows++) {
+	//timers
+	figureTimer = 2;
+
+	constructor(io, room, players) {
+		this.room = room;
+		this.players = players;
+		this.io = io;
+
+		this.figures = {};
+
+		this.figures[players[0].id] = structuredClone(this.figuresConstruct);
+		this.figures[players[1].id] = structuredClone(this.figuresConstruct);
+
+		this.settedFiguresCounter = {};
+		this.settedFiguresCounter[players[0].id] = 0;
+		this.settedFiguresCounter[players[1].id] = 0;
+
+
+		this.gameField = new Array(this.rows);
+
+		//create gamefield with properties
+		for (let rows = 0; rows < this.rows; rows++) {
 		    this.gameField[rows] = new Array(this.columns);
 
-			for (let columns = 0; columns < this.gameField[rows].length; columns++) {
+			for (let columns = 0; columns < this.columns; columns++) {
 				this.gameField[rows][columns] = {
 					coords: {
 						column: columns, 
 						row: rows
 					},
-					player: null,
 					figure: null,
 					revealed: false
 				}
-			}
-		}
 
-		//Set both players on the field
-		this.gameField.forEach((column, columnIndex) => {
-			column.forEach((row, rowIndex) => {
-				if(columnIndex === this.columns - 2 || columnIndex === this.columns - 1) {
-					this.gameField[columnIndex][rowIndex].player = players[0];
-				}else if(columnIndex === 0 || columnIndex === 1) {
-					this.gameField[columnIndex][rowIndex].player = players[1];
+				//set both players on the field
+				if(rows <= 1) {
+					//player 1 on first two rows
+					this.gameField[rows][columns].player = players[0].id;
+					// console.log(players[0].id);
+				}else if(rows >= this.gameField.length - 2) {
+					//player 2 on last two rows
+					this.gameField[rows][columns].player = players[1].id;
 				}
-			});
-		});
-	}
-
-	figurePlaced(caller, data) {
-		const row = data.coords.row;
-		const column = data.coords.column;
-
-		if(this.gameField[row][column].player === caller.id && !this.gameField[row][column].figure) {
-			this.gameField[row][column].figure = data.figure;
-
-			this.settedFiguresCounter++;
-
-			this.emitWithoutEnemyFigures(caller);
-
-			if(this.settedFiguresCounter === 32) {
-				this.io.emit('chooseStarter');
 			}
 		}
+
+		this.start();
 	}
 
-	emitWithoutEnemyFigures(caller) {
-		let callerField = structuredClone(this.gameField);
-		let opponentField = structuredClone(this.gameField);
+	getNextPlayer(callerId) {
+		return callerId === this.players[0].id ? this.players[1].id : this.players[0].id;
+	}
 
-		for (let i = 0; i < this.gameField.length; i++) {
+	emitWithoutEnemyFigures() {
+		let player0Field = structuredClone(this.gameField);
+		let player1Field = structuredClone(this.gameField);
+
+		for (let i = 0; i < this.rows; i++) {
 			for (let j = 0; j < this.columns; j++) {
 				if(this.gameField[i][j].figure && !this.gameField[i][j].revealed) {
-					if(this.gameField[i][j].player === caller.id) {
-						opponentField[i][j].figure = '';
-						// console.log(this.gameField[i][j]);
-					}else if(this.gameField[i][j].player !== caller.id && this.gameField[i][j].player) {
-						callerField[i][j].figure = '';
+					if(this.gameField[i][j].player === this.players[0].id) {
+						player1Field[i][j].figure = '';
+					}else if(this.gameField[i][j].player === this.players[1].id) {
+						player0Field[i][j].figure = '';
 					}
 				}
 			}
 		}
 
-		caller.emit('gameField', callerField);
-		caller.broadcast.emit('gameField', opponentField);
+		this.players[0].emit('gameField', player0Field);
+		this.players[1].emit('gameField', player1Field);
 	}
 
+	//starts the game
 	start() {
 		this.io.to(this.room).emit('start');
+
+		//send first play information to rotate his gamefield with css, because its upside down for him
+		this.players[0].emit('rotateField');
 
 		setTimeout(() => {
 			this.io.to(this.room).emit('gameField', this.gameField);
 		}, 100);
 	}
 
-	gameWon(winner) {
-		this.io.to(this.room).emit('gameWinner', winner.id);
+	//ends the game
+	end(winner) {
+		this.io.to(this.room).emit('end', winner.id);
 	}
 
+	placeFigure(caller, data) {
+		const row = data.coords.row;
+		const column = data.coords.column;
+
+		if(this.gameField[row][column].player === caller.id && !this.gameField[row][column].figure) {
+			
+			if(!Object.keys(this.figuresConstruct).find(el => el === data.figure)) {
+				//player sent non-existing figure
+				console.log('non-existing');
+				return;
+			}else {
+				if(this.figures[caller.id][data.figure].number <= 0) {
+					//player tried to set more figures of the same type than allowed
+					console.log('more than allowed');
+					return;
+				}
+			}
+
+			this.figures[caller.id][data.figure].number--;
+
+			if(this.figures[caller.id][data.figure].number === 0) {
+				delete this.figures[caller.id][data.figure];
+			}
+
+			this.gameField[row][column].figure = data.figure;
+
+			this.settedFiguresCounter[caller.id]++;
+
+			this.emitWithoutEnemyFigures();
+
+			const summedNumbers = Object.values(this.settedFiguresCounter).reduce((acc, el) => acc + el);
+
+			if(summedNumbers === 32) {
+				this.io.emit('chooseStarter');
+				return;
+			}
+
+			//When one player has set all his figures, start timer for the other user
+			if(this.settedFiguresCounter[caller.id] === 16) {
+				const timer = setInterval(() => {
+					this.figureTimer--;
+
+					caller.broadcast.emit('figureTimer', this.figureTimer);
+
+					if(this.figureTimer <= 0) {
+						clearInterval(timer);
+
+						this.placeRandomFigures(this.getNextPlayer(caller.id));
+					}
+				}, 1000);
+			}
+		}
+	}
+
+	placeRandomFigures(player) {
+		const figures = Object.keys(this.figures[player]);
+
+		for (let i = 0; i < this.rows; i++) {
+			for (let j = 0; j < this.columns; j++) {
+				if(!this.gameField[i][j].figure && this.gameField[i][j].player === player) {
+					//set a random figure
+					const randomFigure = figures[Math.floor(Math.random() * figures.length)];
+
+					this.figures[player][randomFigure].number--;
+
+					if(this.figures[player][randomFigure].number === 0) {
+						figures.splice(figures.indexOf(randomFigure), 1);
+					}
+
+					this.gameField[i][j].figure = randomFigure;
+				}
+			}
+		}
+
+		this.emitWithoutEnemyFigures();
+
+		this.io.emit('chooseStarter');
+	}
+
+	//only to select who has the first move (casual rock-scissors-paper game)
 	firstMove(caller, figure) {
-        // console.log(caller.id);
-        // console.log(figure);
-		if(!this.playerFirstMove) {
-			// console.log('first');
-			this.playerFirstMove = figure;
-            this.currentOpponent = caller.id;
+		if(!this.storedFigureForFirstMove) {
+			this.storedFigureForFirstMove = figure;
 		}else {            
-			if(this.playerFirstMove === figure) {
-				this.playerFirstMove = null;
-                this.currentOpponent = null;
+			if(this.storedFigureForFirstMove === figure) {
+				//this is a pat, repeat
+				this.storedFigureForFirstMove = null;
+
 				this.io.to(this.room).emit('firstMoveHas', null);
 			}else if(
-				(this.playerFirstMove === 'rock' && figure === 'paper') ||
-				(this.playerFirstMove === 'paper' && figure === 'scissor') ||
-				(this.playerFirstMove === 'scissor' && figure === 'rock')
+				(this.storedFigureForFirstMove === 'rock' && figure === 'paper') ||
+				(this.storedFigureForFirstMove === 'paper' && figure === 'scissor') ||
+				(this.storedFigureForFirstMove === 'scissor' && figure === 'rock')
 			) {
-				// console.log('caller won');
+				//caller won, this player has the first move
                 this.playerToMove = caller.id;
+
                 this.io.to(this.room).emit('firstMoveHas', caller.id);
 			}else {
-				// console.log('caller lost');
-                this.playerToMove = this.currentOpponent;
-                this.currentOpponent = caller.id;
+				//caller lost, opposite player has first move
+                this.playerToMove = this.getNextPlayer(caller.id);
+
                 this.io.to(this.room).emit('firstMoveHas', this.playerToMove);
 			}
 		}
   	}
 
+	//Method only for Pat Situation where both players have to choose a new figure
 	newFigure(caller, figure) {
 		if(this.patSituation) {
 			let row, column;
@@ -177,7 +282,7 @@ module.exports = class Game {
 		const player = this.playerToMove;
 
 		//opponent ID
-        const opponent = this.currentOpponent;
+        const opponent = this.getNextPlayer(caller.id);
 
 		// disallow if the allowed player is not the caller
 		if (player !== caller.id) {
@@ -204,7 +309,7 @@ module.exports = class Game {
 					const opponentFigure = this.gameField[to.row][to.column].figure;
 
 					if(opponentFigure === 'king') {
-						this.gameWon(caller);
+						this.end(caller);
 						return;
 					}
 
@@ -254,7 +359,6 @@ module.exports = class Game {
 		}
 
 		this.playerToMove = opponent;
-		this.currentOpponent = caller.id;
 		this.io.to(this.room).emit('nextMove');
 	}
 }
