@@ -15,7 +15,6 @@ module.exports = class Game1 {
 	currentFrom;
 	currentTo;
 
-
 	//figures
 	figuresConstruct = {
 		rock: {
@@ -38,6 +37,7 @@ module.exports = class Game1 {
 
 	//timers
 	figureTimer = 2;
+	moveTimer = 30;
 
 	constructor(io, room, players) {
 		this.room = room;
@@ -224,11 +224,15 @@ module.exports = class Game1 {
                 this.playerToMove = caller.id;
 
                 this.io.to(this.room).emit('firstMoveHas', caller.id);
+
+				this.setTimeCounter();
 			}else {
 				//caller lost, opposite player has first move
                 this.playerToMove = this.getNextPlayer(caller.id);
 
                 this.io.to(this.room).emit('firstMoveHas', this.playerToMove);
+
+				this.setTimeCounter();
 			}
 		}
   	}
@@ -277,7 +281,32 @@ module.exports = class Game1 {
 		return false;
     }
 
+	setTimeCounter() {
+		this.setTimeInterval = setInterval(() => {
+			this.moveTimer--;
+
+			this.io.to(this.room).emit('moveTimer', this.moveTimer);
+
+			if(this.moveTimer <= 0) {
+				clearInterval(this.setTimeInterval);
+
+				this.moveTimer = 30;
+
+				this.io.to(this.room).emit('moveTimer', this.moveTimer);
+
+				this.playerToMove = this.getNextPlayer(this.playerToMove);
+
+				this.io.to(this.room).emit('nextMove');
+
+				this.setTimeCounter();
+			}
+		}, 1000);
+	}
+
 	movePlayer(caller, {from, to}) {
+		clearInterval(this.setTimeInterval);
+		this.moveTimer = 30;
+		
 		// player that is to move
 		const player = this.playerToMove;
 
@@ -317,6 +346,7 @@ module.exports = class Game1 {
 						//Pat, both figures are same
 						console.log('pat');
 						this.patSituation = true;
+
 						this.io.to(this.room).emit('pat');
 						return;
 					}else if(
@@ -360,5 +390,7 @@ module.exports = class Game1 {
 
 		this.playerToMove = opponent;
 		this.io.to(this.room).emit('nextMove');
+
+		this.setTimeCounter();
 	}
 }

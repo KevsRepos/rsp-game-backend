@@ -12,10 +12,10 @@ const io = new Server(server, {
   }
 });
 
-// const __dirname = 'www';
+app.use(express.static('www'))
 
 app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/index.html');
+  res.sendFile('/index.html');
 });
 
 let roomCounter = 1;
@@ -60,6 +60,6 @@ io.on('connection', (socket) => {
 	});
 });
 
-server.listen(5000, () => {
+server.listen(5200, () => {
   	console.log('listening on *:5000');
 });
